@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OLT 光猫收光查询工具</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; background: #f5f5f3; color: #2c2c2a; min-height: 100vh; }
+  
+  .header { background: #fff; border-bottom: 0.5px solid rgba(0,0,0,0.12); padding: 14px 24px; display: flex; align-items: center; gap: 12px; }
+  .header-icon { width: 32px; height: 32px; background: #185FA5; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+  .header-icon svg { width: 18px; height: 18px; fill: none; stroke: #fff; stroke-width: 2; }
+  .header-title { font-size: 15px; font-weight: 500; }
+  .header-sub { font-size: 12px; color: #888780; margin-top: 1px; }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #639922; margin-left: auto; }
+  .status-label { font-size: 12px; color: #639922; margin-left: 5px; }
+
+  .main { display: grid; grid-template-columns: 320px 1fr; gap: 0; height: calc(100vh - 61px); }
+
+  .sidebar { background: #fff; border-right: 0.5px solid rgba(0,0,0,0.12); padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+  
+  .section-title { font-size: 11px; font-weight: 500; color: #888780; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 10px; }
+  
+  .form-group { margin-bottom: 12px; }
+  .form-label { font-size: 12px; color: #5f5e5a; margin-bottom: 5px; display: block; }
+  .form-input { width: 100%; border: 0.5px solid rgba(0,0,0,0.2); border-radius: 6px; padding: 7px 10px; font-size: 13px; background: #fff; color: #2c2c2a; outline: none; transition: border-color 0.15s; }
+  .form-input:focus { border-color: #185FA5; }
+  
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+
+  .btn-query { width: 100%; padding: 9px; background: #185FA5; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; transition: background 0.15s; }
+  .btn-query:hover { background: #0c447c; }
+  .btn-query:disabled { background: #b4b2a9; cursor: not-allowed; }
+
+  .btn-clear { width: 100%; padding: 8px; background: transparent; color: #5f5e5a; border: 0.5px solid rgba(0,0,0,0.15); border-radius: 8px; font-size: 12px; cursor: pointer; margin-top: 6px; }
+  .btn-clear:hover { background: #f1efe8; }
+
+  .presets { display: flex; flex-direction: column; gap: 6px; }
+  .preset-item { padding: 9px 12px; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 8px; cursor: pointer; transition: background 0.15s; }
+  .preset-item:hover { background: #f1efe8; border-color: rgba(0,0,0,0.2); }
+  .preset-name { font-size: 13px; font-weight: 500; }
+  .preset-ip { font-size: 12px; color: #888780; margin-top: 2px; font-family: monospace; }
+
+  .content { display: flex; flex-direction: column; overflow: hidden; }
+
+  .tabs { background: #fff; border-bottom: 0.5px solid rgba(0,0,0,0.12); padding: 0 20px; display: flex; gap: 0; }
+  .tab { padding: 12px 16px; font-size: 13px; color: #888780; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.15s; }
+  .tab.active { color: #185FA5; border-bottom-color: #185FA5; font-weight: 500; }
+  .tab:hover:not(.active) { color: #444441; }
+
+  .tab-content { flex: 1; overflow: hidden; display: none; }
+  .tab-content.active { display: flex; flex-direction: column; }
+
+  /* 执行日志 */
+  .log-area { flex: 1; padding: 16px 20px; overflow-y: auto; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; line-height: 1.8; }
+  .log-idle { color: #b4b2a9; padding: 40px 0; text-align: center; }
+  .log-step { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 4px; }
+  .log-step-icon { width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; margin-top: 2px; display: flex; align-items: center; justify-content: center; font-size: 9px; }
+  .log-step-icon.pending { background: #d3d1c7; }
+  .log-step-icon.running { background: #b5d4f4; animation: pulse 1s infinite; }
+  .log-step-icon.done { background: #c0dd97; }
+  .log-step-icon.error { background: #f7c1c1; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+  .log-step-text { color: #444441; }
+  .log-step-text .time { color: #b4b2a9; margin-right: 6px; }
+  .log-step-text .cmd { color: #185FA5; font-weight: 500; }
+  .log-step-text .ok { color: #3B6D11; }
+  .log-step-text .err { color: #A32D2D; }
+  .log-raw { background: #f1efe8; border-radius: 6px; padding: 10px 12px; margin: 8px 0; font-size: 11px; line-height: 1.6; color: #444441; white-space: pre-wrap; word-break: break-all; }
+
+  /* 结果表格 */
+  .result-area { flex: 1; padding: 16px 20px; overflow-y: auto; }
+  .result-empty { color: #b4b2a9; padding: 40px 0; text-align: center; }
+  .result-summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
+  .stat-card { background: #f5f5f3; border-radius: 8px; padding: 12px; }
+  .stat-label { font-size: 11px; color: #888780; margin-bottom: 4px; }
+  .stat-value { font-size: 22px; font-weight: 500; }
+  .stat-value.ok { color: #3B6D11; }
+  .stat-value.warn { color: #BA7517; }
+  .stat-value.danger { color: #A32D2D; }
+
+  .result-table-wrap { overflow-x: auto; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 10px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { font-size: 11px; font-weight: 500; color: #888780; text-align: left; padding: 10px 14px; background: #f5f5f3; border-bottom: 0.5px solid rgba(0,0,0,0.1); }
+  td { padding: 10px 14px; border-bottom: 0.5px solid rgba(0,0,0,0.07); font-size: 12px; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafaf8; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+  .badge-ok { background: #eaf3de; color: #3B6D11; }
+  .badge-warn { background: #faeeda; color: #BA7517; }
+  .badge-danger { background: #fcebeb; color: #A32D2D; }
+  .badge-offline { background: #f1efe8; color: #888780; }
+  .mono { font-family: monospace; font-size: 11px; }
+
+  /* 历史记录 */
+  .history-area { flex: 1; padding: 16px 20px; overflow-y: auto; }
+  .history-empty { color: #b4b2a9; padding: 40px 0; text-align: center; }
+  .history-item { border: 0.5px solid rgba(0,0,0,0.12); border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer; transition: background 0.15s; }
+  .history-item:hover { background: #f1efe8; }
+  .history-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .history-time { font-size: 11px; color: #888780; margin-left: auto; }
+  .history-meta { font-size: 12px; color: #5f5e5a; font-family: monospace; }
+
+  .progress-bar-wrap { padding: 0 20px 12px; }
+  .progress-bar-bg { height: 3px; background: #f1efe8; border-radius: 2px; overflow: hidden; }
+  .progress-bar-fill { height: 100%; background: #185FA5; border-radius: 2px; transition: width 0.4s; width: 0%; }
+
+  .toolbar { padding: 10px 20px; border-top: 0.5px solid rgba(0,0,0,0.08); display: flex; align-items: center; gap: 8px; background: #fff; }
+  .toolbar-tip { font-size: 12px; color: #b4b2a9; flex: 1; }
+  .btn-export { padding: 6px 14px; background: transparent; border: 0.5px solid rgba(0,0,0,0.15); border-radius: 6px; font-size: 12px; color: #5f5e5a; cursor: pointer; }
+  .btn-export:hover { background: #f1efe8; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-icon">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>
+  </div>
+  <div>
+    <div class="header-title">OLT 光猫收光查询工具</div>
+    <div class="header-sub">装维辅助 · 华为 OLT · 实时收光功率</div>
+  </div>
+  <div class="status-dot" id="statusDot"></div>
+  <span class="status-label" id="statusLabel">就绪</span>
+</div>
+
+<div class="main">
+  <div class="sidebar">
+    <div>
+      <div class="section-title">设备参数</div>
+      <div class="form-group">
+        <label class="form-label">OLT IP 地址</label>
+        <input class="form-input" id="oltIp" placeholder="如 10.4.1.5" value="10.4.1.5">
+      </div>
+      <div class="form-group">
+        <label class="form-label">端口（框/槽/端口）</label>
+        <div class="row3">
+          <input class="form-input" id="frame" placeholder="框" value="0">
+          <input class="form-input" id="slot" placeholder="槽" value="1">
+          <input class="form-input" id="port" placeholder="端口" value="4">
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title">跳板机（Telnet）</div>
+      <div class="form-group">
+        <label class="form-label">跳板机 IP</label>
+        <input class="form-input" id="jumpIp" value="221.182.61.61">
+      </div>
+      <div class="form-group">
+        <label class="form-label">端口</label>
+        <input class="form-input" id="jumpPort" value="23">
+      </div>
+      <div class="form-group">
+        <label class="form-label">账号</label>
+        <input class="form-input" id="jumpUser" value="hukai17628697920">
+      </div>
+      <div class="form-group">
+        <label class="form-label">密码</label>
+        <input class="form-input" id="jumpPass" type="password" value="hk@17628697920">
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title">OLT 账号</div>
+      <div class="form-group">
+        <label class="form-label">用户名</label>
+        <input class="form-input" id="oltUser" value="hk19983773584">
+      </div>
+      <div class="form-group">
+        <label class="form-label">密码</label>
+        <input class="form-input" id="oltPass" type="password" value="qwe@123">
+      </div>
+    </div>
+
+    <div>
+      <button class="btn-query" id="btnQuery" onclick="startQuery()">查询收光</button>
+      <button class="btn-clear" onclick="clearAll()">清空结果</button>
+    </div>
+
+    <div>
+      <div class="section-title">常用设备</div>
+      <div class="presets" id="presets">
+        <div class="preset-item" onclick="loadPreset('10.4.1.5','0','1','4')">
+          <div class="preset-name">局端 OLT-01</div>
+          <div class="preset-ip">10.4.1.5 · 0/1/4</div>
+        </div>
+        <div class="preset-item" onclick="loadPreset('10.4.1.6','0','2','0')">
+          <div class="preset-name">局端 OLT-02</div>
+          <div class="preset-ip">10.4.1.6 · 0/2/0</div>
+        </div>
+        <div class="preset-item" onclick="loadPreset('10.4.2.1','0','3','1')">
+          <div class="preset-name">局端 OLT-03</div>
+          <div class="preset-ip">10.4.2.1 · 0/3/1</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('log',this)">执行日志</div>
+      <div class="tab" onclick="switchTab('result',this)">收光结果</div>
+      <div class="tab" onclick="switchTab('history',this)">查询历史</div>
+    </div>
+
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressBar"></div></div>
+    </div>
+
+    <!-- 执行日志 tab -->
+    <div class="tab-content active" id="tab-log">
+      <div class="log-area" id="logArea">
+        <div class="log-idle" id="logIdle">填写参数后点击「查询收光」开始</div>
+      </div>
+    </div>
+
+    <!-- 收光结果 tab -->
+    <div class="tab-content" id="tab-result">
+      <div class="result-area" id="resultArea">
+        <div class="result-empty">暂无数据，请先执行查询</div>
+      </div>
+    </div>
+
+    <!-- 历史记录 tab -->
+    <div class="tab-content" id="tab-history">
+      <div class="history-area" id="historyArea">
+        <div class="history-empty">暂无历史记录</div>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <span class="toolbar-tip" id="toolbarTip">后端 Telnet 跳板机 → OLT config-if-gpon 模式 → 查收光 + SN，获取真实数据</span>
+      <button class="btn-export" onclick="exportCSV()" id="btnExport" style="display:none">导出 CSV</button>
+      <button class="btn-export" onclick="startBackend()">启动后端服务</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// 全局错误捕获，方便排查
+window.onerror = function(msg, src, line, col, err) {
+  const area = document.getElementById('logArea');
+  if (area) {
+    const idle = document.getElementById('logIdle');
+    if (idle) idle.remove();
+    const div = document.createElement('div');
+    div.className = 'log-step';
+    div.innerHTML = `<div class="log-step-icon error"></div><div class="log-step-text"><span class="err">JS错误: ${msg} (行${line})</span></div>`;
+    area.appendChild(div);
+  }
+};
+window.onunhandledrejection = function(e) {
+  const area = document.getElementById('logArea');
+  if (area) {
+    const div = document.createElement('div');
+    div.className = 'log-step';
+    div.innerHTML = `<div class="log-step-icon error"></div><div class="log-step-text"><span class="err">请求失败: ${e.reason}</span></div>`;
+    area.appendChild(div);
+  }
+};
+
+var API_BASE = 'http://127.0.0.1:5059';
+
+// 全局状态变量（必须在所有函数之前声明）
+var isQuerying = false;  // 查询中标志
+var queryHistory = [];  // 查询历史
+var lastResults = [];  // 最近一次查询结果
+
+// 初始化（从 localStorage 读取历史）
+try {
+  queryHistory = JSON.parse(localStorage.getItem('olt_history') || '[]');
+} catch(e) {
+  queryHistory = [];
+}
+
+function switchTab(name, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+function loadPreset(ip, frame, slot, port) {
+  document.getElementById('oltIp').value = ip;
+  document.getElementById('frame').value = frame;
+  document.getElementById('slot').value = slot;
+  document.getElementById('port').value = port;
+}
+
+function clearAll() {
+  document.getElementById('logArea').innerHTML = '<div class="log-idle" id="logIdle">填写参数后点击「查询收光」开始</div>';
+  document.getElementById('resultArea').innerHTML = '<div class="result-empty">暂无数据，请先执行查询</div>';
+  document.getElementById('progressBar').style.width = '0%';
+  document.getElementById('btnExport').style.display = 'none';
+  lastResults = [];
+  setStatus('就绪', '#639922');
+}
+
+function setStatus(label, color) {
+  document.getElementById('statusLabel').textContent = label;
+  document.getElementById('statusLabel').style.color = color;
+  document.getElementById('statusDot').style.background = color;
+}
+
+function addLog(icon, text, type='') {
+  const idle = document.getElementById('logIdle');
+  if (idle) idle.remove();
+  const area = document.getElementById('logArea');
+  const div = document.createElement('div');
+  div.className = 'log-step';
+  const iconClass = { pending:'pending', running:'running', done:'done', error:'error' }[icon] || 'pending';
+  div.innerHTML = `<div class="log-step-icon ${iconClass}"></div><div class="log-step-text">${text}</div>`;
+  area.appendChild(div);
+  area.scrollTop = area.scrollHeight;
+  return div;
+}
+
+function addRawLog(text) {
+  const area = document.getElementById('logArea');
+  const div = document.createElement('div');
+  div.className = 'log-raw';
+  div.textContent = text;
+  area.appendChild(div);
+  area.scrollTop = area.scrollHeight;
+}
+
+function setProgress(pct) {
+  document.getElementById('progressBar').style.width = pct + '%';
+}
+
+async function startQuery() {
+  if (isQuerying) return;
+  
+  const params = {
+    olt_ip: document.getElementById('oltIp').value.trim(),
+    frame: document.getElementById('frame').value.trim(),
+    slot: document.getElementById('slot').value.trim(),
+    port: document.getElementById('port').value.trim(),
+    jump_ip: document.getElementById('jumpIp').value.trim(),
+    jump_port: parseInt(document.getElementById('jumpPort').value) || 23,
+    jump_user: document.getElementById('jumpUser').value.trim(),
+    jump_pass: document.getElementById('jumpPass').value,
+    olt_user: document.getElementById('oltUser').value.trim(),
+    olt_pass: document.getElementById('oltPass').value,
+  };
+
+  if (!params.olt_ip || !params.frame || !params.slot || !params.port) {
+    alert('请填写 OLT IP 和端口信息');
+    return;
+  }
+
+  isQuerying = true;
+  document.getElementById('btnQuery').disabled = true;
+  document.getElementById('logArea').innerHTML = '';
+  document.getElementById('btnExport').style.display = 'none';
+  setStatus('查询中...', '#BA7517');
+  setProgress(5);
+
+  const portStr = `${params.frame}/${params.slot}/${params.port}`;
+
+  addLog('running', `<span class="time">${now()}</span>检查后端服务连接...`);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const healthRes = await fetch(API_BASE + '/health', { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (!healthRes.ok) throw new Error('后端服务异常');
+    
+    setProgress(15);
+    addLog('done', `<span class="time">${now()}</span><span class="ok">后端服务正常</span>`);
+    addLog('running', `<span class="time">${now()}</span>正在连接跳板机 <span class="cmd">${params.jump_ip}:${params.jump_port}</span>...`);
+    setProgress(25);
+
+    const controller2 = new AbortController();
+    const timeoutId2 = setTimeout(() => controller2.abort(), 90000);
+    const res = await fetch(API_BASE + '/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+      signal: controller2.signal
+    });
+    clearTimeout(timeoutId2);
+
+    const data = await res.json();
+
+    if (data.steps) {
+      for (const step of data.steps) {
+        addLog(step.status, `<span class="time">${now()}</span>${step.message}`);
+        setProgress(step.progress || 50);
+        await sleep(80);
+      }
+    }
+
+    if (data.raw_output) {
+      addRawLog(data.raw_output);
+    }
+
+    if (data.success && data.onts) {
+      setProgress(100);
+      addLog('done', `<span class="time">${now()}</span><span class="ok">查询完成，共 ${data.onts.length} 台 ONT</span>`);
+      renderResults(data.onts, portStr, params.olt_ip);
+      saveHistory(params.olt_ip, portStr, data.onts.length);
+      setStatus('查询成功', '#639922');
+      switchTab('result', document.querySelectorAll('.tab')[1]);
+    } else {
+      addLog('error', `<span class="time">${now()}</span><span class="err">查询失败: ${data.error || '未知错误'}</span>`);
+      setStatus('查询失败', '#A32D2D');
+    }
+
+  } catch (e) {
+    if (e.name === 'TimeoutError' || e.message.includes('fetch')) {
+      addLog('error', `<span class="time">${now()}</span><span class="err">无法连接后端服务 (127.0.0.1:5059)</span>`);
+      addLog('pending', `<span class="time">${now()}</span>请在终端执行 <span class="cmd">python olt_backend.py</span> 启动后端，或点击底部「启动后端服务」按钮`);
+      setStatus('后端未启动', '#A32D2D');
+    } else {
+      addLog('error', `<span class="time">${now()}</span><span class="err">${e.message}</span>`);
+      setStatus('出错', '#A32D2D');
+    }
+  }
+
+  isQuerying = false;
+  document.getElementById('btnQuery').disabled = false;
+}
+
+
+function getLevel(rx) {
+  if (rx === null) return 'offline';
+  if (rx >= -24) return 'ok';
+  if (rx >= -27) return 'warn';
+  return 'danger';
+}
+
+function getLevelLabel(rx) {
+  if (rx === null) return '离线';
+  if (rx >= -24) return '正常';
+  if (rx >= -27) return '偏弱';
+  return '过低';
+}
+
+function renderResults(onts, portStr, oltIp) {
+  lastResults = onts;
+  const area = document.getElementById('resultArea');
+  const online = onts.filter(o => o.state === 'online');
+  const okCount = online.filter(o => getLevel(o.rx) === 'ok').length;
+  const warnCount = online.filter(o => getLevel(o.rx) === 'warn').length;
+  const dangerCount = online.filter(o => getLevel(o.rx) === 'danger').length;
+  const offCount = onts.filter(o => o.state !== 'online').length;
+  const temps = online.filter(o => o.temperature !== null).map(o => o.temperature);
+  const avgTemp = temps.length ? (temps.reduce((a,b) => a+b, 0) / temps.length).toFixed(1) : '--';
+
+  area.innerHTML = `
+    <div style="margin-bottom:12px;font-size:12px;color:#888780;">OLT: <span style="color:#2c2c2a;font-family:monospace">${oltIp}</span>  端口: <span style="color:#2c2c2a;font-family:monospace">${portStr}</span>  查询时间: ${now(true)}</div>
+    <div class="result-summary">
+      <div class="stat-card"><div class="stat-label">在线 ONT</div><div class="stat-value" style="color:#185FA5">${online.length}</div></div>
+      <div class="stat-card"><div class="stat-label">收光正常</div><div class="stat-value ok">${okCount}</div></div>
+      <div class="stat-card"><div class="stat-label">信号偏弱</div><div class="stat-value warn">${warnCount}</div></div>
+      <div class="stat-card"><div class="stat-label">信号过低/离线</div><div class="stat-value danger">${dangerCount + offCount}</div></div>
+      <div class="stat-card"><div class="stat-label">平均温度</div><div class="stat-value" style="color:#5f5e5a;font-size:18px">${avgTemp}&deg;C</div></div>
+    </div>
+    <div class="result-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ONT ID</th>
+            <th>收光 Rx (dBm)</th>
+            <th>发光 Tx (dBm)</th>
+            <th>OLT 侧收光 (dBm)</th>
+            <th>温度 (°C)</th>
+            <th>电压 (V)</th>
+            <th>偏置电流 (mA)</th>
+            <th>距离 (m)</th>
+            <th>状态</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${onts.map(o => {
+            const level = getLevel(o.rx);
+            const badgeClass = level === 'ok' ? 'badge-ok' : level === 'warn' ? 'badge-warn' : level === 'danger' ? 'badge-danger' : 'badge-offline';
+            return `<tr>
+              <td class="mono">${o.id}</td>
+              <td class="mono" style="color:${level==='ok'?'#3B6D11':level==='warn'?'#BA7517':'#A32D2D'};font-weight:500">${o.rx !== null ? o.rx.toFixed(2) : '--'}</td>
+              <td class="mono">${o.tx !== null ? o.tx.toFixed(2) : '--'}</td>
+              <td class="mono">${o.olt_rx !== null ? o.olt_rx.toFixed(2) : '--'}</td>
+              <td class="mono">${o.temperature !== null ? o.temperature.toFixed(0) : '--'}</td>
+              <td class="mono">${o.voltage !== null ? o.voltage.toFixed(3) : '--'}</td>
+              <td class="mono">${o.bias !== null ? o.bias.toFixed(0) : '--'}</td>
+              <td class="mono">${o.distance !== null ? o.distance.toFixed(0) : '--'}</td>
+              <td><span class="badge ${badgeClass}">${getLevelLabel(o.rx)}</span></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+  document.getElementById('btnExport').style.display = '';
+}
+
+function saveHistory(ip, port, count) {
+  queryHistory.unshift({ ip, port, count, time: new Date().toLocaleString('zh-CN') });
+  if (queryHistory.length > 20) queryHistory = queryHistory.slice(0, 20);
+  localStorage.setItem('olt_history', JSON.stringify(queryHistory));
+  renderHistory();
+}
+
+function renderHistory() {
+  const area = document.getElementById('historyArea');
+  if (!queryHistory.length) {
+    area.innerHTML = '<div class="history-empty">暂无历史记录</div>';
+    return;
+  }
+  area.innerHTML = queryHistory.map((h, i) => `
+    <div class="history-item" onclick="reloadHistory(${i})">
+      <div class="history-header">
+        <span style="font-size:13px;font-weight:500">${h.ip}</span>
+        <span class="badge badge-ok" style="font-size:11px">端口 ${h.port}</span>
+        <span class="history-time">${h.time}</span>
+      </div>
+      <div class="history-meta">共查询 ${h.count} 台 ONT</div>
+    </div>
+  `).join('');
+}
+
+function reloadHistory(idx) {
+  const h = queryHistory[idx];
+  const [frame, slot, port] = h.port.split('/');
+  loadPreset(h.ip, frame, slot, port);
+  switchTab('log', document.querySelectorAll('.tab')[0]);
+}
+
+function exportCSV() {
+  if (!lastResults.length) return;
+  const header = ['ONT_ID','SN','Rx_dBm','Tx_dBm','OLT_Rx_dBm','Temperature_C','Voltage_V','Bias_mA','Distance_m','状态','信号状态'];
+  const rows = lastResults.map(o => [
+    o.id, o.sn,
+    o.rx !== null ? o.rx.toFixed(2) : '',
+    o.tx !== null ? o.tx.toFixed(2) : '',
+    o.olt_rx !== null ? o.olt_rx.toFixed(2) : '',
+    o.temperature !== null ? o.temperature.toFixed(1) : '',
+    o.voltage !== null ? o.voltage.toFixed(3) : '',
+    o.bias !== null ? o.bias.toFixed(1) : '',
+    o.distance !== null ? o.distance.toFixed(0) : '',
+    o.state,
+    getLevelLabel(o.rx)
+  ]);
+  const csv = [header, ...rows].map(r => r.join(',')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `olt_optical_${document.getElementById('oltIp').value}_${Date.now()}.csv`;
+  a.click();
+}
+
+function startBackend() {
+  alert('请双击运行 start.bat 文件启动后端服务。\n\n后端启动后会自动打开浏览器，无需手动操作。');
+}
+
+function now(full=false) {
+  const d = new Date();
+  if (full) return d.toLocaleString('zh-CN');
+  return d.toTimeString().slice(0,8) + ' ';
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+renderHistory();
+</script>
+</body>
+</html>
